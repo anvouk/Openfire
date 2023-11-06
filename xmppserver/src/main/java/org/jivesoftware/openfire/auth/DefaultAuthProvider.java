@@ -55,7 +55,7 @@ public class DefaultAuthProvider implements AuthProvider {
                 "SELECT plainPassword,encryptedPassword,iterations,salt,storedKey,serverKey FROM ofUser WHERE username=?";
     private static final String UPDATE_PASSWORD =
             "UPDATE ofUser SET plainPassword=?, encryptedPassword=?, storedKey=?, serverKey=?, salt=?, iterations=? WHERE username=?";
-    
+
     private static final SecureRandom random = new SecureRandom();
 
     /**
@@ -153,6 +153,7 @@ public class DefaultAuthProvider implements AuthProvider {
 
     @Override
     public void authenticate(String username, String password) throws UnauthorizedException {
+        Log.debug(">>>> DefaultAuthProvider authenticate({}, {})", username, password);
         if (username == null || password == null) {
             throw new UnauthorizedException();
         }
@@ -161,26 +162,33 @@ public class DefaultAuthProvider implements AuthProvider {
             // Check that the specified domain matches the server's domain
             int index = username.indexOf("@");
             String domain = username.substring(index + 1);
+            Log.debug("username: '{}', domain: '{}'", username, domain);
             if (domain.equals(XMPPServer.getInstance().getServerInfo().getXMPPDomain())) {
                 username = username.substring(0, index);
+                Log.debug("final username: '{}'", username);
             } else {
                 // Unknown domain. Return authentication failed.
+                Log.debug("Error Unknown domain");
                 throw new UnauthorizedException();
             }
         }
         try {
             if (!checkPassword(username, password)) {
+                Log.debug("failed checkPassword({}, {})", username, password);
                 throw new UnauthorizedException();
             }
         }
         catch (UserNotFoundException unfe) {
+            Log.debug("user not found", unfe);
             throw new UnauthorizedException();
         }
         // Got this far, so the user must be authorized.
+        Log.debug("<<<< DefaultAuthProvider authenticate: user is authenticated here");
     }
 
     @Override
     public String getPassword(String username) throws UserNotFoundException {
+        Log.debug(">>>> DefaultAuthProvider getPassword({})", username);
         if (!supportsPasswordRetrieval()) {
             // Reject the operation since the provider is read-only
             throw new UnsupportedOperationException();
@@ -192,8 +200,10 @@ public class DefaultAuthProvider implements AuthProvider {
             // Check that the specified domain matches the server's domain
             int index = username.indexOf("@");
             String domain = username.substring(index + 1);
+            Log.debug("username: '{}', domain: '{}'", username, domain);
             if (domain.equals(XMPPServer.getInstance().getServerInfo().getXMPPDomain())) {
                 username = username.substring(0, index);
+                Log.debug("final username: '{}'", username);
             } else {
                 // Unknown domain.
                 throw new UserNotFoundException();
@@ -211,15 +221,21 @@ public class DefaultAuthProvider implements AuthProvider {
             String encrypted = rs.getString(2);
             if (encrypted != null) {
                 try {
-                    return AuthFactory.decryptPassword(encrypted);
+                    Log.debug("decrypting password from db");
+                    String pass = AuthFactory.decryptPassword(encrypted);
+                    Log.debug("<<<< DefaultAuthProvider getPassword -> decrypted password from db: '{}'", pass);
+                    return pass;
                 }
                 catch (UnsupportedOperationException uoe) {
                     // Ignore and return plain password instead.
+                    Log.debug("unsupported op", uoe);
                 }
             }
             if (plainText == null) {
+                Log.debug("plainText is null");
                 throw new UnsupportedOperationException();
             }
+            Log.debug("<<<< DefaultAuthProvider getPassword -> '{}'", plainText);
             return plainText;
         }
         catch (SQLException sqle) {
@@ -231,6 +247,7 @@ public class DefaultAuthProvider implements AuthProvider {
     }
 
     public boolean checkPassword(String username, String testPassword) throws UserNotFoundException {
+        Log.debug(">>>> DefaultAuthProvider checkPassword({}, {})", username, testPassword);
         Connection con = null;
         PreparedStatement pstmt = null;
         ResultSet rs = null;
@@ -245,6 +262,7 @@ public class DefaultAuthProvider implements AuthProvider {
                 throw new UserNotFoundException();
             }
         }
+        Log.debug("cleared username: '{}'", username);
         try {
             con = DbConnectionManager.getConnection();
             pstmt = con.prepareStatement(TEST_PASSWORD);
@@ -260,9 +278,12 @@ public class DefaultAuthProvider implements AuthProvider {
             String storedKey = rs.getString(5);
             if (encrypted != null) {
                 try {
+                    Log.debug("decrypt password from db");
                     plainText = AuthFactory.decryptPassword(encrypted);
+                    Log.debug("decrypted password: {}", plainText);
                 }
                 catch (UnsupportedOperationException uoe) {
+                    Log.debug("unsupported operation", uoe);
                     // Ignore and return plain password instead.
                 }
             }
@@ -270,9 +291,15 @@ public class DefaultAuthProvider implements AuthProvider {
                 boolean scramOnly = JiveGlobals.getBooleanProperty("user.scramHashedPasswordOnly");
                 if (scramOnly) {
                     // If we have a password here, but we're meant to be scramOnly, we should reset it.
+                    Log.debug("using scram-only, password: '{}'", plainText);
                     setPassword(username, plainText);
+                } else {
+                    Log.debug("not using scram-only");
                 }
-                return testPassword.equals(plainText);
+                boolean result = testPassword.equals(plainText);
+                Log.debug("comparing passwords: '{}' == '{}'", testPassword, plainText);
+                Log.debug("<<< DefaultAuthProvider checkPassword -> comparing passwords -> result: {}", result);
+                return result;
             }
             // Don't have either plain or encrypted, so test SCRAM hash.
             if (salt == null || iterations == 0 || storedKey == null) {
@@ -289,7 +316,14 @@ public class DefaultAuthProvider implements AuthProvider {
                 Log.warn("Unable to check SCRAM values for PLAIN authentication.");
                 return false;
             }
-            return DatatypeConverter.printBase64Binary(testStoredKey).equals(storedKey);
+            Log.debug("saltShaker: {}", saltShaker);
+            Log.debug("saltedPassword: {}", saltedPassword);
+            Log.debug("clientKey: {}", clientKey);
+            Log.debug("testStoredKey: {}", testStoredKey);
+            Log.debug("storedKey: {}", storedKey);
+            final boolean isOk = DatatypeConverter.printBase64Binary(testStoredKey).equals(storedKey);
+            Log.debug("<<< DefaultAuthProvider checkPassword -> is success: {}", isOk);
+            return isOk;
         }
         catch (SQLException sqle) {
             Log.error("User SQL failure:", sqle);
@@ -317,13 +351,13 @@ public class DefaultAuthProvider implements AuthProvider {
                 throw new UserNotFoundException();
             }
         }
-        
+
         // Store the salt and salted password so SCRAM-SHA-1 SASL auth can be used later.
         byte[] saltShaker = new byte[24];
         random.nextBytes(saltShaker);
         String salt = DatatypeConverter.printBase64Binary(saltShaker);
 
-        
+
         final int iterations = ScramSha1SaslServer.ITERATION_COUNT.getValue();
         byte[] saltedPassword = null, clientKey = null, storedKey = null, serverKey = null;
     try {
@@ -334,7 +368,7 @@ public class DefaultAuthProvider implements AuthProvider {
        } catch (SaslException | NoSuchAlgorithmException e) {
            Log.warn("Unable to persist values for SCRAM authentication.");
        }
-   
+
         if (!scramOnly && !usePlainPassword) {
             try {
                 encryptedPassword = AuthFactory.encryptPassword(password);

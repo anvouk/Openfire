@@ -92,7 +92,7 @@ public class AuthFactory {
      * only provided for special-case logic.
      *
      * @return the current UserProvider.
-     * @deprecated Prefer using the corresponding factory method, rather than 
+     * @deprecated Prefer using the corresponding factory method, rather than
      * 					invoking methods on the provider directly
      */
     public static AuthProvider getAuthProvider() {
@@ -157,7 +157,7 @@ public class AuthFactory {
      * @throws ConnectionException if there is a problem connecting to user and group system
      * @throws InternalUnauthenticatedException if there is a problem authentication Openfire itself into the user and group system
      */
-    public static void setPassword(String username, String password) throws UserNotFoundException, 
+    public static void setPassword(String username, String password) throws UserNotFoundException,
             UnsupportedOperationException, ConnectionException, InternalUnauthenticatedException {
             authProvider.setPassword(username, password);
         }
@@ -177,12 +177,16 @@ public class AuthFactory {
      */
     public static AuthToken authenticate(String username, String password)
             throws UnauthorizedException, ConnectionException, InternalUnauthenticatedException {
+        Log.debug(">>>> AuthFactory authenticate({}, {})", username, password);
         if (LockOutManager.getInstance().isAccountDisabled(username)) {
             LockOutManager.getInstance().recordFailedLogin(username);
+            Log.debug("<<<< AuthFactory authenticate: UnauthorizedException account is disabled");
             throw new UnauthorizedException();
         }
         authProvider.authenticate(username, password);
-        return AuthToken.generateUserToken( username );
+        final AuthToken token = AuthToken.generateUserToken( username );
+        Log.debug("<<<< AuthFactory authenticate: ok. token username: '{}', token domain: '{}'", token.getUsername(), token.getDomain());
+        return token;
     }
 
     /**

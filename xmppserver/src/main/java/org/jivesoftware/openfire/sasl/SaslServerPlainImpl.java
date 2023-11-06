@@ -17,6 +17,9 @@
 package org.jivesoftware.openfire.sasl;
 
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -44,6 +47,7 @@ import javax.security.auth.callback.UnsupportedCallbackException;
  */
 
 public class SaslServerPlainImpl implements SaslServer {
+    private static final Logger Log = LoggerFactory.getLogger(SaslServerPlainImpl.class);
 
     private String principal;
     private String username; //requested authorization identity
@@ -94,8 +98,8 @@ public class SaslServerPlainImpl implements SaslServer {
      * the response or generating a challenge.
      */
     @Override
-    public byte[] evaluateResponse(byte[] response)
-        throws SaslException {
+    public byte[] evaluateResponse(byte[] response) throws SaslException {
+        Log.debug(">>> SaslServerPlainImpl evaluateResponse");
         if (completed) {
             throw new IllegalStateException("PLAIN authentication already completed");
         }
@@ -114,23 +118,29 @@ public class SaslServerPlainImpl implements SaslServer {
                     principal = username;
                 }
                 password = tokens.nextToken();
+                Log.debug("SaslServerPlainImpl username: '{}' principal: '{}', password: '{}'", username, principal, password);
                 NameCallback ncb = new NameCallback("PLAIN authentication ID: ",principal);
                 VerifyPasswordCallback vpcb = new VerifyPasswordCallback(password.toCharArray());
                 cbh.handle(new Callback[]{ncb,vpcb});
 
                 if (vpcb.getVerified()) {
+                    Log.debug("vpcb.getVerified() -> true");
                     vpcb.clearPassword();
                     AuthorizeCallback acb = new AuthorizeCallback(principal,username);
                     cbh.handle(new Callback[]{acb});
                     if(acb.isAuthorized()) {
+                        Log.debug("acb.isAuthorized() -> true");
                         username = acb.getAuthorizedID();
+                        Log.debug("acb.isAuthorized() -> true -> username: '{}'", username);
                         completed = true;
                     } else {
+                        Log.debug("acb.isAuthorized() -> false");
                         completed = true;
                         username = null;
                         throw new SaslException("PLAIN: user not authorized: "+principal);
                     }
                 } else {
+                    Log.debug("vpcb.getVerified() -> false");
                     throw new SaslException("PLAIN: user not authorized: "+principal);
                 }
             } else {
@@ -141,9 +151,11 @@ public class SaslServerPlainImpl implements SaslServer {
                 return null;
             }
         } catch (UnsupportedCallbackException | IOException | NoSuchElementException e) {
+            Log.debug("well, shit", e);
             aborted = true;
             throw new SaslException("PLAIN authentication failed for: "+username, e);
         }
+        Log.debug("<<<< SaslServerPlainImpl evaluateResponse: ok");
         return null;
     }
 
@@ -178,7 +190,7 @@ public class SaslServerPlainImpl implements SaslServer {
 
     /**
      * Unwraps a byte array received from the client. PLAIN supports no security layer.
-     * 
+     *
      * @throws SaslException if attempted to use this method.
      */
     @Override
