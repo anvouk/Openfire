@@ -19,6 +19,7 @@ package org.jivesoftware.openfire.auth;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
+import org.jivesoftware.openfire.XMPPServer;
 import org.jivesoftware.openfire.lockout.LockOutManager;
 import org.jivesoftware.openfire.user.UserNotFoundException;
 import org.jivesoftware.util.Blowfish;
@@ -170,7 +171,7 @@ public class AuthFactory {
      * @param username the username.
      * @param password the password.
      * @return an AuthToken token if the username and password are correct.
-     * @throws UnauthorizedException if the username and password do not match any existing user
+     * @throws UnauthorizedException if the username and password do not match any existing user or if username has a domain and domain does not match
      *      or the account is locked out.
      * @throws ConnectionException if there is a problem connecting to user and group system
      * @throws InternalUnauthenticatedException if there is a problem authentication Openfire itself into the user and group system
@@ -178,11 +179,32 @@ public class AuthFactory {
     public static AuthToken authenticate(String username, String password)
             throws UnauthorizedException, ConnectionException, InternalUnauthenticatedException {
         Log.debug(">>>> AuthFactory authenticate({}, {})", username, password);
-        if (LockOutManager.getInstance().isAccountDisabled(username)) {
-            LockOutManager.getInstance().recordFailedLogin(username);
+        
+        String clean_username = "";
+
+        if (username.contains("@")) {
+            // Check that the specified domain matches the server's domain
+            int index = username.indexOf("@");
+            String domain = username.substring(index + 1);
+            Log.debug("username: '{}', domain: '{}'", username, domain);
+            if (domain.equals(XMPPServer.getInstance().getServerInfo().getXMPPDomain())) {
+                clean_username = username.substring(0, index);                
+                Log.debug("final username: '{}'", clean_username);
+            } else {
+                // Unknown domain.
+                throw new UnauthorizedException();
+            }
+        } else {
+            clean_username = username;
+        }
+
+        if (LockOutManager.getInstance().isAccountDisabled(clean_username)) {
+            LockOutManager.getInstance().recordFailedLogin(clean_username);
             Log.debug("<<<< AuthFactory authenticate: UnauthorizedException account is disabled");
             throw new UnauthorizedException();
         }
+        
+        Log.debug("########### {}", authProvider.getClass().getSimpleName());
         authProvider.authenticate(username, password);
         final AuthToken token = AuthToken.generateUserToken( username );
         Log.debug("<<<< AuthFactory authenticate: ok. token username: '{}', token domain: '{}'", token.getUsername(), token.getDomain());

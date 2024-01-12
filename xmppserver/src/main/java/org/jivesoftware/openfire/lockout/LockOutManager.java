@@ -126,7 +126,10 @@ public class LockOutManager {
         if (username == null) {
             throw new UnsupportedOperationException("Null username not allowed!");
         }
+        Log.debug("###### LockOutManager getDisabledStatus {}", username);
         LockOutFlag lockOutFlag = getUserLockOut(username);
+        Log.debug("###### LockOutManager post getDisabledStatus {}", lockOutFlag);
+
         return getUnExpiredLockout(lockOutFlag);
     }
 
@@ -137,7 +140,9 @@ public class LockOutManager {
      * @return True or false if the account is currently locked out.
      */
     public boolean isAccountDisabled(String username) {
+        Log.debug("###### LockOutManager isAccountDisabled {}", username);
         LockOutFlag flag = getDisabledStatus(username);
+        Log.debug("###### LockOutManager post isAccountDisabled {}", flag);
         if (flag == null) {
             return false;
         }
@@ -215,6 +220,8 @@ public class LockOutManager {
      * @return the user lock out
      */
     private LockOutFlag getUserLockOut(String username) {
+        Log.debug("###### LockOutManager getUserLockOut provider {}", provider.getClass().getSimpleName());
+
         if (provider.shouldNotBeCached()) {
             return provider.getDisabledStatus(username);
         }
